@@ -1,0 +1,254 @@
+#image: instrumentisto/flutter:3.22.2
+##image: subosito/flutter-action:v2
+## Specifies the Docker image to use for the pipeline. This image has Flutter version 3.22.2 installed.
+#
+#stages:
+#  # Defines the stages of the pipeline and their execution order.
+#  #  - install-dependencies  # First stage: install dependencies for the Flutter project.
+#  #  - test                  # Second stage: run tests on the project.
+#  #  - increment             # Third stage: increment the version number of the build.
+#  #  - build_android_dev    # Fourth stage: build the Android development version of the app.
+#  #  - build_android_prod  # Fifth stage: build the Android production version of the app.ё
+#  - ios_build
+#
+#variables:
+#  # Variables used throughout the pipeline jobs.
+#  PUB_VARS: "--timeout 30s --concurrency=6 --test-randomize-ordering-seed=random --reporter=expanded"
+#  # Flags for running Flutter tests.
+#  VERSIONCOMPONENTTOINCREMENT: '-p'  # Indicates which part of the version to increment (e.g., patch).
+#  ANDROID_COMPILE_SDK: "30"  # Android SDK compile version.
+#  ANDROID_BUILD_TOOLS: "30.0.3"  # Android Build Tools version.
+#  ANDROID_SDK_TOOLS: "4333796"  # Android SDK Tools version.
+#
+#.use-pub-cache-bin:
+#  # Reusable configuration for setting up the pub cache for Dart/Flutter dependencies.
+#  before_script:
+#    - export PUB_CACHE=$CI_PROJECT_DIR/.pub-cache
+#    # Sets the environment variable PUB_CACHE to store the package cache in the project directory.
+#    - export PATH="$PATH":"$PUB_CACHE/bin"
+#    # Adds the pub cache directory to the system PATH to make commands available.
+#
+#.upload-cache:
+#  # Configuration to upload the cache after successful jobs to improve efficiency in future pipeline runs.
+#  cache:
+#    when: 'on_success'
+#    # Cache is uploaded only if the job succeeds.
+#    paths:
+#      - $CI_PROJECT_DIR/.pub-cache/global_packages/
+#      - $CI_PROJECT_DIR/.pub-cache/bin/
+#      - $CI_PROJECT_DIR/.pub-cache/hosted/
+#      - $CI_PROJECT_DIR/.dart_tool/
+#    # These are the directories that will be cached (Dart and Flutter dependencies).
+#
+#.download-cache:
+#  # Configuration to download the cache in later jobs to reuse dependencies, speeding up the pipeline.
+#  cache:
+#    paths:
+#      - $CI_PROJECT_DIR/.pub-cache/global_packages/
+#      - $CI_PROJECT_DIR/.pub-cache/bin/
+#      - $CI_PROJECT_DIR/.pub-cache/hosted/
+#      - $CI_PROJECT_DIR/.dart_tool/
+#    policy: pull
+#    # The cache will be pulled at the start of the job.
+#
+#.install_dependencies:
+#  before_script:
+#    # Installs Curl for HTTP requests.
+#    - apt-get update -y && apt-get install -y curl openssh-client
+#    # Installs Curl for HTTP requests.
+#    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+#    - eval $(ssh-agent -s)
+#    # Starts the SSH agent.
+#    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+#    # Adds the SSH private key to the agent.
+#    - mkdir -p ~/.ssh
+#    - ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+#    # Adds GitLab to the list of known hosts.
+
+#.build_apk:
+#  script:
+#    # Accepts Android SDK licenses.
+#    - flutter doctor --android-licenses
+#    - flutter pub get
+#    - |
+#      git archive --remote=git@gitlab.com:pizza-dev/ecom.git ${CI_COMMIT_REF_NAME} pubspec.yaml | tar -x
+#    # Extracts the pubspec.yaml file from the remote repository.
+#    - version=$(grep -o 'version:.*' pubspec.yaml | cut -d' ' -f2)
+#    - name=$(grep -oP 'name:\s*\K.*' pubspec.yaml | tr -d '[:space:]')
+#    - full_name="${name}_$BUILD_TYPE"
+#    # Extracts the package name and version details.
+#    - major=$(echo $version | awk -F'[.+]' '{print $1}' | tr -d '[:space:]')
+#    - minor=$(echo $version | awk -F'[.+]' '{print $2}' | tr -d '[:space:]')
+#    - patch=$(echo $version | awk -F'[.+]' '{print $3}' | tr -d '[:space:]')
+#    - build_number=$(grep -o 'version:.*' pubspec.yaml | cut -d'+' -f2 | tr -d '[:space:]')
+#    - build_name="${full_name}.v${major}.${minor}.${patch}_${build_number}"
+#    - build_name_only="${major}.${minor}.${patch}"
+#    - new_version="$major.$minor.$patch+$build_number"
+#
+#    # Sets up the new version and build number.
+#    - flutter build apk --release --target=lib/main_mobile.dart --flavor $BUILD_TYPE --build-name $build_name_only --build-number $build_number
+#    # Builds the Android APK for the production environment.
+#    - mv build/app/outputs/flutter-apk/app-${BUILD_TYPE}-release.apk build/app/outputs/flutter-apk/${build_name}.apk
+#    # Renames the APK file with the correct version name.
+#    - |
+#      echo "File path: build/app/outputs/flutter-apk/${build_name}.apk"
+#      echo "API URL: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${full_name}/${build_number}/${build_name}.apk"
+#      curl -v -L --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+#           --upload-file build/app/outputs/flutter-apk/${build_name}.apk \
+#           --max-time 1200 \
+#           ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/${full_name}/${build_number}/${build_name}.apk
+#    # Uploads the APK file to the project storage in GitLab.
+#  needs:
+#    - job: .install_dependencies
+#
+#.build_android:
+#  extends:
+#    - .install_dependencies
+#    - .build_apk
+#  timeout: 60m
+#  when: manual
+#  allow_failure: true
+#  only:
+#    - merge_requests
+
+#install-dependencies:
+#  stage: install-dependencies
+#  extends:
+#    - .use-pub-cache-bin
+#    - .upload-cache
+#  # This job extends reusable configurations to set up the pub cache and upload it if successful.
+#  script:
+#    - flutter pub get -- --no-precompile
+#    # Fetch all dependencies for the project without precompiling.
+#  only:
+#    - merge_requests
+#    # This job runs only for merge requests.
+#
+#unit-test:
+#  stage: test
+#  needs:
+#    - install-dependencies
+#  extends:
+#    - .use-pub-cache-bin
+#    - .download-cache
+#  # Extends reusable configurations to set up the pub cache and download the existing cache.
+#  script:
+#    - flutter test
+#    # Runs the Flutter unit tests for the project.
+#  only:
+#    - merge_requests
+#    # This job also runs only for merge requests.
+#
+#increment-build:
+#  stage: increment
+#  resource_group: $CI_COMMIT_REF_NAME
+#  # Ensures only one pipeline job with the same commit reference runs at a time.
+#  extends:
+#    - .use-pub-cache-bin
+#    - .download-cache
+#  # Extends reusable configurations for pub cache setup and cache download.
+#  before_script:
+#    # Installs necessary tools and configures SSH for Git operations.
+#    - apt-get update -y && apt-get install -y openssh-client wget gnupg git-core
+#    # Installs SSH client, wget, GPG, and Git.
+#    - command -v ssh-agent >/dev/null
+#    - eval $(ssh-agent -s)
+#    # Starts the SSH agent.
+#    - mkdir -p ~/.ssh
+#    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_ed25519
+#    # Stores the SSH private key in a file.
+#    - chmod 400 ~/.ssh/id_ed25519
+#    # Sets correct permissions for the private key.
+#    - ssh-keyscan -H gitlab.com >> ~/.ssh/known_hosts
+#    # Adds GitLab to the list of known hosts.
+#    - ssh-add ~/.ssh/id_ed25519
+#    # Adds the SSH private key to the agent.
+#    - chmod 700 ~/.ssh
+#    - chmod 644 ~/.ssh/known_hosts
+#  script:
+#    # Checks out the current branch and increments the build number.
+#    - |
+#      git checkout -B ${CI_COMMIT_REF_NAME}
+#      BUILD_NUMBER=$(grep 'version:' pubspec.yaml | awk '{print $2}' | cut -d '+' -f2)
+#      NEW_BUILD_NUMBER=$((BUILD_NUMBER + 1))
+#      sed -i "s/\(version:.*+\)[0-9]\+/\1$NEW_BUILD_NUMBER/" pubspec.yaml
+#    # Updates the build number in the pubspec.yaml file.
+#    - git remote set-url origin git@$CI_SERVER_HOST:$CI_PROJECT_PATH.git
+#    - git config --global user.email 'pizzaday@gmail.com'
+#    - git config --global user.name 'pizzaday'
+#    # Configures Git user details.
+#    - git add .
+#    - git commit -m "Update version"
+#    - git push origin $CI_COMMIT_REF_NAME -o ci.skip
+#    # Commits the updated pubspec.yaml and pushes the changes without triggering another pipeline.
+#  only:
+#    - merge_requests
+#    # This job runs only for merge requests.
+#
+#build_android_prod:
+#  stage: build_android_prod
+#  extends: .build_android
+#  variables:
+#    BUILD_TYPE: "prod"
+#  needs:
+#    - increment-build
+#
+#build_android_dev:
+#  stage: build_android_dev
+#  extends: .build_android
+#  variables:
+#    BUILD_TYPE: "dev"
+#  needs:
+#    - increment-build
+
+
+#ios_build:
+#  stage: ios_build
+#  tags:
+#    - macOs-ecom-shell-runner
+#  before_script:
+#    - export PATH="$PATH:/Users/maksim/flutter/flutter/bin"
+#    - flutter --version  # Проверяем установленную версию Flutter
+#    - flutter pub get
+#    # Installs Curl for HTTP requests.
+#    - apt-get update -y && apt-get install -y curl openssh-client
+#    # Installs Curl for HTTP requests.
+#    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+#    - eval $(ssh-agent -s)
+#    # Starts the SSH agent.
+#    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+#    # Adds the SSH private key to the agent.
+#    - mkdir -p ~/.ssh
+#    - ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
+#    # Adds GitLab to the list of known hosts.
+#    - export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+#
+#    - brew install rbenv ruby-build
+#    - echo 'eval "$(rbenv init -)"' >> ~/.bash_profile
+#    - source ~/.bash_profile
+#    - rbenv install 3.1.0 --skip-existing
+#    - rbenv global 3.1.0
+#  script:
+#    - |
+#      git archive --remote=git@gitlab.com:pizza-dev/ecom.git ${CI_COMMIT_REF_NAME} pubspec.yaml | tar -x
+#      export BUILD_NUMBER=$(grep -o 'version:.*' pubspec.yaml | cut -d'+' -f2 | tr -d '[:space:]')
+#      echo "BUILD_NUMBER=$BUILD_NUMBER"
+#    - build_number=$(grep -o 'version:.*' pubspec.yaml | cut -d'+' -f2 | tr -d '[:space:]')
+#    - gem install cocoapods
+#    #    - gem pristine nkf --version 0.2.0
+#    #    - gem pristine bigdecimal --version 3.1.8
+#    #    - rm -rf Pods
+#    - pod install
+#    - pod update
+#    - bundle install
+#    - bundle exec fastlane upload_to_store
+#  variables:
+#    DEVELOPER_PORTAL_TEAM_ID: ${DEVELOPER_PORTAL_TEAM_ID}
+#    APPLE_KEY_ID: ${APPLE_KEY_ID}
+#    ISSUER_ID: ${ISSUER_ID}
+#    APPLE_KEY_CONTENT: ${APPLE_KEY_CONTENT}
+#    BUILD_NUMBER: $BUILD_NUMBER
+#  #  when: manual
+#  only:
+#    - merge_requests
+#    # This job runs only for merge requests.

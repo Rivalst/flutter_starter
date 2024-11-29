@@ -1,0 +1,32 @@
+{
+  "@@locale": "en",
+  "home": "Home",
+  "@home": {
+    "description": "Title of the home page"
+  },
+  "settings": "Settings",
+  "@settings": {
+    "description": "Title of the settings page"
+  },
+  "days": "{days}d",
+  "hours": "{hours}h",
+  "minutes": "{minutes}m",
+  "@days": {
+    "description": "Label for days",
+    "placeholders": {
+      "days": {}
+    }
+  },
+  "@hours": {
+    "description": "Label for hours",
+    "placeholders": {
+      "hours": {}
+    }
+  },
+  "@minutes": {
+    "description": "Label for minutes",
+    "placeholders": {
+      "minutes": {}
+    }
+  }
+}
